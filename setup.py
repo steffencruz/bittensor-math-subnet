@@ -58,16 +58,16 @@ with codecs.open(os.path.join(here, 'template/__init__.py'), encoding='utf-8') a
     version_string = version_match.group(1)
 
 setup(
-    name='bittensor_subnet_template', # TODO(developer): Change this value to your module subnet name.
+    name='bittensor_math_subnet', 
     version=version_string,    
-    description='bittensor_subnet_template', # TODO(developer): Change this value to your module subnet description.
+    description='Bittensor subnet for solving natural language mathematics problems', 
     long_description=long_description,
     long_description_content_type='text/markdown',
-    url='https://github.com/opentensor/bittensor-subnet-template', # TODO(developer): Change this url to your module subnet github url.
-    author='bittensor.com', # TODO(developer): Change this value to your module subnet author name.
+    url='https://github.com/steffencruz/bittensor-math-subnet', 
+    author='bittensor.com', 
     packages=find_packages(),
     include_package_data=True,
-    author_email='', # TODO(developer): Change this value to your module subnet author email.
+    author_email='steffen@opentensor.dev', # TODO(developer): Change this value to your module subnet author email.
     license='MIT',
     python_requires='>=3.8',
     install_requires=requirements,

@@ -24,7 +24,8 @@
 import os
 import time
 import torch
-import template
+import random
+import math
 import argparse
 import traceback
 import bittensor as bt
@@ -32,14 +33,85 @@ import bittensor as bt
 # import this repo
 import template
 
+class ArithmeticExpression(torch.nn.Module):
+    def __init__(self, min_depth=1, max_depth=5):
+        self.min_depth = min_depth
+        self.max_depth = max_depth
 
+    def forward(self) -> str:
+        """
+        Makes a random math question.
+        """
+        return self._generate_expr(random.randint(self.min_depth, self.max_depth))
+
+    def _generate_expr(self, n: int) -> str:
+        if n == 0:
+            return str(random.randint(1, 100))
+        else:
+            return '(' + self._generate_expr(n - 1) + random.choice(['+', '-', '*', '/']) + self._generate_expr(n - 1) + ')'
+
+    def reward(self, prompt: str, response: float) -> float:
+        """
+        Reward the miner response to the eval request. 
+
+        Returns:
+        - float: The reward value for the miner.
+        """
+        bt.logging.info(f"Prompt: {prompt}, Response: {response}")
+        try:
+            return math.exp( - (response - eval(prompt)) ** 2 )
+        except:
+            return 0 # handles division by zero and None responses
+
+class TemplateExpression(torch.nn.Module):
+    
+    choices: dict = {
+        'time_unit': ['seconds', 'minutes', 'hours', 'days', 'weeks', 'months', 'years'],
+        'action': ['walk', 'run', 'swim', 'fly', 'drive', 'bike', 'sail', 'row', 'climb', 'crawl'],
+        'dist_unit': ['meters', 'kilometers', 'miles', 'lightyears', 'parsecs', 'furlongs', 'fathoms', 'cubits', 'inches', 'feet'],
+    }
+    def __init__(self):
+        # give and example natural language math question, framed as an exam question
+        
+        self.template = 'If it takes {random_number1} {time_unit1} to {action1} {random_number1} {dist_unit1}, how long does it take to {action2} {random_number2} {dist_unit2} in {time_unit}?'
+
+    def forward(self) -> str:
+    
+        choices = dict(
+            random_number1 = random.randint(1, 100),
+            time_unit1 = random.choice(self.choices['time_unit']),
+            action1 = random.choice(self.choices['action']),
+            random_number2 = random.randint(1, 100),
+            dist_unit1 = random.choice(self.choices['dist_unit']),
+            action2 = random.choice(self.choices['action']),
+            random_number3 = random.randint(1, 100),
+            dist_unit2 = random.choice(self.choices['dist_unit']),
+            time_unit = random.choice(self.choices['time_unit']),
+        )
+        query = self.template.format(**choices)
+        correct_answer = 42
+        return query, correct_answer
+    
+    def reward(self, prompt: str, response: float, correct_answer: float) -> float:
+        """
+        Reward the miner response to the template request.
+
+        Returns:
+        - float: The reward value for the miner.
+        """
+        bt.logging.info(f"Prompt: {prompt}, Response: {response}, Correct Answer: {correct_answer}")
+        try:
+            return 1 / min(1, (response - correct_answer) ** 2 )
+        except:
+            return 0
+        
 # Step 2: Set up the configuration parser
 # This function is responsible for setting up and parsing command-line arguments.
 def get_config():
 
     parser = argparse.ArgumentParser()
     # TODO(developer): Adds your custom validator arguments to the parser.
-    parser.add_argument('--custom', default='my_custom_value', help='Adds a custom value to the parser.')
+    parser.add_argument('--alpha', float, default=0.9, help='The alpha value for the moving average of the score.')
     # Adds override arguments for network and netuid.
     parser.add_argument( '--netuid', type = int, default = 1, help = "The chain subnet uid." )
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
@@ -107,50 +179,45 @@ def main( config ):
 
     # Step 6: Set up initial scoring weights for validation
     bt.logging.info("Building validation weights.")
-    alpha = 0.9
     scores = torch.ones_like(metagraph.S, dtype=torch.float32)
     bt.logging.info(f"Weights: {scores}")
+    
+    model = ArithmeticExpression()
 
     # Step 7: The Main Validation Loop
     bt.logging.info("Starting validator loop.")
     step = 0
     while True:
         try:
+            query = model.forward()
             # TODO(developer): Define how the validator selects a miner to query, how often, etc.
             # Broadcast a query to all miners on the network.
             responses = dendrite.query(
-                # Send the query to all axons in the network.
                 metagraph.axons,
-                # Construct a dummy query.
-                template.protocol.Dummy( dummy_input = step ), # Construct a dummy query.
-                # All responses have the deserialize function called on them before returning.
-                deserialize = True, 
+                template.protocol.MathProblem( query = query ),
+                deserialize = True,
             )
 
             # Log the results for monitoring purposes.
-            bt.logging.info(f"Received dummy responses: {responses}")
+            bt.logging.info(f"Received responses: {responses}")
 
-            # TODO(developer): Define how the validator scores responses.
             # Adjust the scores based on responses from miners.
             for i, resp_i in enumerate(responses):
-                # Initialize the score for the current miner's response.
-                score = 0
 
-                # Check if the miner has provided the correct response by doubling the dummy input.
-                # If correct, set their score for this round to 1.
-                if resp_i == step * 2:
-                    score = 1
+                # Check if the miner has provided the correct response.
+                score = model.reward(query, resp_i)
 
                 # Update the global score of the miner.
                 # This score contributes to the miner's weight in the network.
                 # A higher weight means that the miner has been consistently responding correctly.
-                scores[i] = alpha * scores[i] + (1 - alpha) * score
+                scores[i] = config.alpha * scores[i] + (1 - config.alpha) * score
+            
+            bt.logging.info(f"Updated scores: {scores}")
 
             # Periodically update the weights on the Bittensor blockchain.
-            if (step + 1) % 2 == 0:
-                # TODO(developer): Define how the validator normalizes scores before setting weights.
+            if (step + 1) % 10 == 0:
                 weights = torch.nn.functional.normalize(scores, p=1.0, dim=0)
-                bt.logging.info(f"Setting weights: {weights}")
+                bt.logging.info(f"Setting weights: {weights}, sum: {torch.sum(weights)}")
                 # This is a crucial step that updates the incentive mechanism on the Bittensor blockchain.
                 # Miners with higher scores (or weights) receive a larger share of TAO rewards on this subnet.
                 result = subtensor.set_weights(
@@ -161,14 +228,16 @@ def main( config ):
                     wait_for_inclusion = True
                 )
                 if result: bt.logging.success('Successfully set weights.')
-                else: bt.logging.error('Failed to set weights.') 
+                else: bt.logging.error('Failed to set weights.')
+                
+                bt.logging.info(metagraph.axons)
 
             # End the current step and prepare for the next iteration.
             step += 1
             # Resync our local state with the latest state from the blockchain.
             metagraph = subtensor.metagraph(config.netuid)
-            # Sleep for a duration equivalent to the block time (i.e., time between successive blocks).
-            time.sleep(bt.__blocktime__)
+
+            time.sleep(3)
 
         # If we encounter an unexpected error, log it for debugging.
         except RuntimeError as e:

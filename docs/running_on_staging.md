@@ -57,12 +57,12 @@ If you don't already have the Bittensor revolution, follow these steps.
 cd ..
 
 # Clone the template repository
-git clone https://github.com/opentensor/bittensor-subnet-template.git
+git clone https://github.com/steffencruz/bittensor-math-subnet.git
 
 # Navigate to the cloned repository
-cd bittensor-subnet-template
+cd bittensor-math-subnet
 
-# Install the bittensor-subnet-template python package
+# Install the bittensor-math-subnet python package
 python -m pip install -e .
 ```
 

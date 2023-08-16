@@ -1,7 +1,6 @@
 # The MIT License (MIT)
 # Copyright © 2023 Yuma Rao
-# TODO(developer): Set your name
-# Copyright © 2023 <your name>
+# Copyright © 2023 Steffen Cruz
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 # documentation files (the “Software”), to deal in the Software without restriction, including without limitation
@@ -25,3 +24,4 @@ __spec_version__ = (1000 * int(version_split[0])) + (10 * int(version_split[1]))
 
 # Import all submodules.
 from . import protocol
+from . import reward

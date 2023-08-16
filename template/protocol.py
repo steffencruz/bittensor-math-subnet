@@ -73,3 +73,38 @@ class Dummy( bt.Synapse ):
         5
         """
         return self.dummy_output
+
+class MathProblem( bt.Synapse ):
+    """
+    A simple protocol representation which uses bt.Synapse as its base.
+    This protocol helps in handling request and response communication between
+    the miner and the validator.
+
+    Attributes:
+    - query: A string value representing the input request sent by the validator.
+    - solution: A float value which, when filled, represents the response from the miner.
+    """
+
+    # Required request input, filled by sending dendrite caller.
+    query: str
+
+    # Optional request output, filled by recieving axon.
+    solution: typing.Optional[float] = None
+
+    def deserialize(self) -> float:
+        """
+        Deserialize the model output. This method retrieves the response from
+        the miner in the form of solution, deserializes it and returns it
+        as the output of the dendrite.query() call.
+
+        Returns:
+        - int: The deserialized response, which in this case is the value of dummy_output.
+
+        Example:
+        Assuming a MathProblem instance has a solution value of 5:
+        >>> math_instance = MathProblem(query='What is 2 + 2?')
+        >>> math_instance.dummy_output = 5
+        >>> math_instance.deserialize()
+        5
+        """
+        return self.solution

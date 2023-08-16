@@ -23,13 +23,29 @@
 # Step 1: Import necessary libraries and modules
 import os
 import time
-import template
+import torch
 import argparse
 import traceback
+import random
 import bittensor as bt
 
 # import this repo
 import template
+
+
+class MathEvalModel(torch.nn.Module):
+    def __init__(self, fuzz=0.0):
+        self.model = lambda x: eval(x)
+        self.fuzz = fuzz
+
+    def forward(self, query ) -> float:
+        """
+        Call the model with the given inputs and return the numerical output.
+        """
+        solution = self.model(query) + random.gauss(0, self.fuzz)
+        bt.logging.info(f'Forwarded inputs: {query} to outputs: {solution}')
+        return solution
+
 
 def get_config():
     # Step 2: Set up the configuration parser
@@ -37,7 +53,7 @@ def get_config():
     # Using command-line arguments allows users to customize various miner settings.
     parser = argparse.ArgumentParser()
     # TODO(developer): Adds your custom miner arguments to the parser.
-    parser.add_argument('--custom', default='my_custom_value', help='Adds a custom value to the parser.')
+    parser.add_argument('--fuzz', type=float, default=0.0, help='The fuzz parameter for the miner response.')
     # Adds override arguments for network and netuid.
     parser.add_argument( '--netuid', type = int, default = 1, help = "The chain subnet uid." )
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
@@ -103,66 +119,60 @@ def main( config ):
         bt.logging.info(f"Running miner on uid: {my_subnet_uid}")
 
     # Step 4: Set up miner functionalities
+    model = MathEvalModel(fuzz=config.fuzz)
+    
     # The following functions control the miner's response to incoming requests.
     # The blacklist function decides if a request should be ignored.
-    def blacklist_fn( synapse: template.protocol.Dummy ) -> bool:
-        # TODO(developer): Define how miners should blacklist requests. This Function 
-        # Runs before the synapse data has been deserialized (i.e. before synapse.data is available).
-        # The synapse is instead contructed via the headers of the request. It is important to blacklist
-        # requests before they are deserialized to avoid wasting resources on requests that will be ignored.
-        # Below: Check that the hotkey is a registered entity in the metagraph.
+    def blacklist_fn( synapse: template.protocol.MathProblem ) -> bool:
+        # Check that the hotkey is a registered entity in the metagraph.
         if synapse.dendrite.hotkey not in metagraph.hotkeys:
             # Ignore requests from unrecognized entities.
             bt.logging.trace(f'Blacklisting unrecognized hotkey {synapse.dendrite.hotkey}')
             return True
-        # TODO(developer): In practice it would be wise to blacklist requests from entities that 
-        # are not validators, or do not have enough stake. This can be checked via metagraph.S
-        # and metagraph.validator_permit. You can always attain the uid of the sender via a
-        # metagraph.hotkeys.index( synapse.dendrite.hotkey ) call.
+        
+        caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
+        # Check that the hotkey is a registered validator in the metagraph.
+        if not metagraph.validator_permit[ caller_uid ]:
+            bt.logging.trace(f'Blacklisting hotkey {synapse.dendrite.hotkey} without validator permit.')
+            return True
+
         # Otherwise, allow the request to be processed further.
         bt.logging.trace(f'Not Blacklisting recognized hotkey {synapse.dendrite.hotkey}')
         return False
 
     # The priority function determines the order in which requests are handled.
     # More valuable or higher-priority requests are processed before others.
-    def priority_fn( synapse: template.protocol.Dummy ) -> float:
-        # TODO(developer): Define how miners should prioritize requests.
-        # Miners may recieve messages from multiple entities at once. This function
-        # determines which request should be processed first. Higher values indicate
-        # that the request should be processed first. Lower values indicate that the
-        # request should be processed later.
-        # Below: simple logic, prioritize requests from entities with more stake.
+    def priority_fn( synapse: template.protocol.MathProblem ) -> float:
+        # Simple logic, prioritize requests from entities with more stake.
         caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey ) # Get the caller index.
         prirority = float( metagraph.S[ caller_uid ] ) # Return the stake as the priority.
         bt.logging.trace(f'Prioritizing {synapse.dendrite.hotkey} with value: ', prirority)
         return prirority
 
     # This is the core miner function, which decides the miner's response to a valid, high-priority request.
-    def dummy( synapse: template.protocol.Dummy ) -> template.protocol.Dummy:
-        # TODO(developer): Define how miners should process requests.
+    def forward_fn( synapse: template.protocol.MathProblem ) -> template.protocol.MathProblem:
         # This function runs after the synapse has been deserialized (i.e. after synapse.data is available).
         # This function runs after the blacklist and priority functions have been called.
-        # Below: simple template logic: return the input value multiplied by 2.
-        # If you change this, your miner will lose emission in the network incentive landscape.
-        synapse.dummy_output = synapse.dummy_input * 2
+        # Set the synapse's response to the request by performing inference.
+        synapse.solution = model.forward(synapse.query)
         return synapse
 
     # Step 5: Build and link miner functions to the axon.
     # The axon handles request processing, allowing validators to send this process requests.
-    axon = bt.axon( wallet = wallet )
+    axon = bt.axon( wallet = wallet, config = config )
     bt.logging.info(f"Axon {axon}")
 
     # Attach determiners which functions are called when servicing a request.
     bt.logging.info(f"Attaching forward function to axon.")
     axon.attach(
-        forward_fn = dummy,
+        forward_fn = forward_fn,
         blacklist_fn = blacklist_fn,
         priority_fn = priority_fn,
     )
 
     # Serve passes the axon information to the network + netuid we are hosting on.
     # This will auto-update if the axon port of external ip have changed.
-    bt.logging.info(f"Serving axon {dummy} on network: {config.subtensor.chain_endpoint} with netuid: {config.netuid}")
+    bt.logging.info(f"Serving axon {forward_fn} on network: {config.subtensor.chain_endpoint} with netuid: {config.netuid}")
     axon.serve( netuid = config.netuid, subtensor = subtensor )
 
     # Start  starts the miner's axon, making it active on the network.
