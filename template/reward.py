@@ -16,14 +16,31 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-# TODO(developer): Change this value when updating your code base.
-# Define the version of the template module.
-__version__ = "0.0.0"
-version_split = __version__.split(".")
-__spec_version__ = (1000 * int(version_split[0])) + (10 * int(version_split[1])) + (1 * int(version_split[2]))
+import typing
+import torch
+import bittensor as bt
 
-# Import all submodules.
-from . import protocol
-from . import validator
-from . import reward
-from . import miner
+
+def dummy( query: int, response: int) -> float:
+    """
+    Reward the miner response to the dummy request. This method returns a reward
+    value for the miner, which is used to update the miner's score.
+
+    Returns:
+    - float: The reward value for the miner.
+    """
+
+    return 1.0 if response == query * 2 else 0
+
+def gauss(answer: float, response: float, question: str = None, pct_tol: float = 0.01) -> float:
+    """Calculate the reward for a miner response. The reward is the gaussian centered at the correct answer with standard deviation tol.
+
+    Args:
+        answer (float): Correct answer.
+        response (float): Miner predicted answer
+
+    Returns:
+        float: Reward
+    """
+    pct_error = abs(answer - response) / (abs(answer)+1e-6)
+    return torch.exp(-0.5 * torch.tensor(pct_error / pct_tol) ** 2).item()

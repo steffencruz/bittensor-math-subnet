@@ -102,9 +102,14 @@ class MathProblem( bt.Synapse ):
 
         Example:
         Assuming a MathProblem instance has a solution value of 5:
-        >>> math_instance = MathProblem(query='What is 2 + 2?')
-        >>> math_instance.dummy_output = 5
+        >>> math_instance = MathProblem(query='What is 2 + 3?')
+        >>> math_instance.solution = '5'
         >>> math_instance.deserialize()
         5
         """
-        return self.solution
+        bt.logging.info(f'Deserializing {self.solution!r} by converting to float.')
+        try:
+            return float(self.solution)
+        except:
+            bt.logging.error(f'Failed to deserialize {self.solution!r} by converting to float.')
+            return 0

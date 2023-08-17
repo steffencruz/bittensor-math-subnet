@@ -1,7 +1,6 @@
 # The MIT License (MIT)
 # Copyright © 2023 Yuma Rao
-# TODO(developer): Set your name
-# Copyright © 2023 <your name>
+# Copyright © 2023 Steffen Cruz
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 # documentation files (the “Software”), to deal in the Software without restriction, including without limitation
@@ -24,8 +23,6 @@
 import os
 import time
 import torch
-import random
-import math
 import argparse
 import traceback
 import bittensor as bt
@@ -33,85 +30,16 @@ import bittensor as bt
 # import this repo
 import template
 
-class ArithmeticExpression(torch.nn.Module):
-    def __init__(self, min_depth=1, max_depth=5):
-        self.min_depth = min_depth
-        self.max_depth = max_depth
 
-    def forward(self) -> str:
-        """
-        Makes a random math question.
-        """
-        return self._generate_expr(random.randint(self.min_depth, self.max_depth))
-
-    def _generate_expr(self, n: int) -> str:
-        if n == 0:
-            return str(random.randint(1, 100))
-        else:
-            return '(' + self._generate_expr(n - 1) + random.choice(['+', '-', '*', '/']) + self._generate_expr(n - 1) + ')'
-
-    def reward(self, prompt: str, response: float) -> float:
-        """
-        Reward the miner response to the eval request. 
-
-        Returns:
-        - float: The reward value for the miner.
-        """
-        bt.logging.info(f"Prompt: {prompt}, Response: {response}")
-        try:
-            return math.exp( - (response - eval(prompt)) ** 2 )
-        except:
-            return 0 # handles division by zero and None responses
-
-class TemplateExpression(torch.nn.Module):
-    
-    choices: dict = {
-        'time_unit': ['seconds', 'minutes', 'hours', 'days', 'weeks', 'months', 'years'],
-        'action': ['walk', 'run', 'swim', 'fly', 'drive', 'bike', 'sail', 'row', 'climb', 'crawl'],
-        'dist_unit': ['meters', 'kilometers', 'miles', 'lightyears', 'parsecs', 'furlongs', 'fathoms', 'cubits', 'inches', 'feet'],
-    }
-    def __init__(self):
-        # give and example natural language math question, framed as an exam question
-        
-        self.template = 'If it takes {random_number1} {time_unit1} to {action1} {random_number1} {dist_unit1}, how long does it take to {action2} {random_number2} {dist_unit2} in {time_unit}?'
-
-    def forward(self) -> str:
-    
-        choices = dict(
-            random_number1 = random.randint(1, 100),
-            time_unit1 = random.choice(self.choices['time_unit']),
-            action1 = random.choice(self.choices['action']),
-            random_number2 = random.randint(1, 100),
-            dist_unit1 = random.choice(self.choices['dist_unit']),
-            action2 = random.choice(self.choices['action']),
-            random_number3 = random.randint(1, 100),
-            dist_unit2 = random.choice(self.choices['dist_unit']),
-            time_unit = random.choice(self.choices['time_unit']),
-        )
-        query = self.template.format(**choices)
-        correct_answer = 42
-        return query, correct_answer
-    
-    def reward(self, prompt: str, response: float, correct_answer: float) -> float:
-        """
-        Reward the miner response to the template request.
-
-        Returns:
-        - float: The reward value for the miner.
-        """
-        bt.logging.info(f"Prompt: {prompt}, Response: {response}, Correct Answer: {correct_answer}")
-        try:
-            return 1 / min(1, (response - correct_answer) ** 2 )
-        except:
-            return 0
-        
 # Step 2: Set up the configuration parser
 # This function is responsible for setting up and parsing command-line arguments.
 def get_config():
 
     parser = argparse.ArgumentParser()
     # TODO(developer): Adds your custom validator arguments to the parser.
-    parser.add_argument('--alpha', float, default=0.9, help='The alpha value for the moving average of the score.')
+    parser.add_argument('--alpha', type = float, default = 0.9, help = 'The alpha value for the moving average of the score.')
+    parser.add_argument('--topics', type = str, default = None, help = 'Regex of math topics to use in validation')
+    
     # Adds override arguments for network and netuid.
     parser.add_argument( '--netuid', type = int, default = 1, help = "The chain subnet uid." )
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
@@ -181,20 +109,23 @@ def main( config ):
     bt.logging.info("Building validation weights.")
     scores = torch.ones_like(metagraph.S, dtype=torch.float32)
     bt.logging.info(f"Weights: {scores}")
-    
-    model = ArithmeticExpression()
+
+    # Set up the model for validation. MathGenerator generates a random math problem on each forward
+    model = template.validator.MathGenerator(topics = config.topics)
 
     # Step 7: The Main Validation Loop
     bt.logging.info("Starting validator loop.")
     step = 0
     while True:
         try:
-            query = model.forward()
+            question, answer = model.forward()
+            bt.logging.info(f'Step {step}, Question: {question!r}')
+            
             # TODO(developer): Define how the validator selects a miner to query, how often, etc.
             # Broadcast a query to all miners on the network.
             responses = dendrite.query(
                 metagraph.axons,
-                template.protocol.MathProblem( query = query ),
+                template.protocol.MathProblem( query = question ),
                 deserialize = True,
             )
 
@@ -205,13 +136,13 @@ def main( config ):
             for i, resp_i in enumerate(responses):
 
                 # Check if the miner has provided the correct response.
-                score = model.reward(query, resp_i)
+                score = template.reward.gauss(answer, resp_i, question) if resp_i is not None else 0
 
                 # Update the global score of the miner.
                 # This score contributes to the miner's weight in the network.
                 # A higher weight means that the miner has been consistently responding correctly.
                 scores[i] = config.alpha * scores[i] + (1 - config.alpha) * score
-            
+
             bt.logging.info(f"Updated scores: {scores}")
 
             # Periodically update the weights on the Bittensor blockchain.
@@ -229,7 +160,7 @@ def main( config ):
                 )
                 if result: bt.logging.success('Successfully set weights.')
                 else: bt.logging.error('Failed to set weights.')
-                
+
                 bt.logging.info(metagraph.axons)
 
             # End the current step and prepare for the next iteration.
@@ -237,7 +168,7 @@ def main( config ):
             # Resync our local state with the latest state from the blockchain.
             metagraph = subtensor.metagraph(config.netuid)
 
-            time.sleep(3)
+            time.sleep(bt.__blocktime__)
 
         # If we encounter an unexpected error, log it for debugging.
         except RuntimeError as e:

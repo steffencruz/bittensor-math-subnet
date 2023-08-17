@@ -1,2 +1,8 @@
 git+https://github.com/opentensor/bittensor.git@revolution
 torch
+pandas
+mathgenerator
+plotly
+nbformat
+tqdm
+openai

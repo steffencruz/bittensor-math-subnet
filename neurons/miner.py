@@ -23,28 +23,12 @@
 # Step 1: Import necessary libraries and modules
 import os
 import time
-import torch
 import argparse
 import traceback
-import random
 import bittensor as bt
 
 # import this repo
 import template
-
-
-class MathEvalModel(torch.nn.Module):
-    def __init__(self, fuzz=0.0):
-        self.model = lambda x: eval(x)
-        self.fuzz = fuzz
-
-    def forward(self, query ) -> float:
-        """
-        Call the model with the given inputs and return the numerical output.
-        """
-        solution = self.model(query) + random.gauss(0, self.fuzz)
-        bt.logging.info(f'Forwarded inputs: {query} to outputs: {solution}')
-        return solution
 
 
 def get_config():
@@ -52,8 +36,8 @@ def get_config():
     # This function initializes the necessary command-line arguments.
     # Using command-line arguments allows users to customize various miner settings.
     parser = argparse.ArgumentParser()
-    # TODO(developer): Adds your custom miner arguments to the parser.
-    parser.add_argument('--fuzz', type=float, default=0.0, help='The fuzz parameter for the miner response.')
+    
+    parser.add_argument( '--model_type', type = str, default = 'SimpleEvalMiner', help = 'The model type to run.' )
     # Adds override arguments for network and netuid.
     parser.add_argument( '--netuid', type = int, default = 1, help = "The chain subnet uid." )
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
@@ -119,7 +103,8 @@ def main( config ):
         bt.logging.info(f"Running miner on uid: {my_subnet_uid}")
 
     # Step 4: Set up miner functionalities
-    model = MathEvalModel(fuzz=config.fuzz)
+    model = template.miner.get_model(config)
+    bt.logging.info(f"Model: {model}")
     
     # The following functions control the miner's response to incoming requests.
     # The blacklist function decides if a request should be ignored.
