@@ -30,6 +30,7 @@ import bittensor as bt
 # import this repo
 import template
 
+#TODO: Add gating mechanism
 
 # Step 2: Set up the configuration parser
 # This function is responsible for setting up and parsing command-line arguments.
@@ -39,7 +40,8 @@ def get_config():
     # TODO(developer): Adds your custom validator arguments to the parser.
     parser.add_argument('--alpha', type = float, default = 0.9, help = 'The alpha value for the moving average of the score.')
     parser.add_argument('--topics', type = str, default = None, help = 'Regex of math topics to use in validation')
-    
+    parser.add_argument('--enhanced_context', type = bool, default = False, help = 'Enhance the context of the question with the category and topic title')
+
     # Adds override arguments for network and netuid.
     parser.add_argument( '--netuid', type = int, default = 1, help = "The chain subnet uid." )
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
@@ -112,15 +114,16 @@ def main( config ):
 
     # Set up the model for validation. MathGenerator generates a random math problem on each forward
     model = template.validator.MathGenerator(topics = config.topics)
-
     # Step 7: The Main Validation Loop
     bt.logging.info("Starting validator loop.")
     step = 0
     while True:
         try:
-            question, answer = model.forward()
+            question, answer, topic = model.forward(return_topic=True)
+            if config.enhanced_context:
+                question = f'The following {topic["category"].lower().replace("_","")} question is about {topic["title"].lower().replace("_","")}:\n{question}'
             bt.logging.info(f'Step {step}, Question: {question!r}')
-            
+
             # TODO(developer): Define how the validator selects a miner to query, how often, etc.
             # Broadcast a query to all miners on the network.
             responses = dendrite.query(

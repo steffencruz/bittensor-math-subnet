@@ -23,6 +23,7 @@ import math
 import re
 import mathgenerator
 import bittensor as bt
+from sympy.parsing.latex import parse_latex
 
 
 class ArithmeticExpression(torch.nn.Module):
@@ -102,6 +103,8 @@ class TemplateExpression(torch.nn.Module):
 
 
 class MathGenerator(torch.nn.Module):
+    
+    # TODO: composite question - blend multiple topics together
 
     # each entry contains the following keys
     all_topics: list[dict] = [dict(zip(('index', 'title', 'generator', 'function_name', 'category'), t)) for t in mathgenerator.getGenList()]
@@ -156,8 +159,8 @@ class MathGenerator(torch.nn.Module):
             question, answer = topic['generator'](**kwargs)
 
             if not latex:
-                question = question.replace('$', '').replace('\\', '').replace('=','').strip()
-                answer = answer.replace('$', '').replace('\\', '').replace('=','').strip()
+                question = parse_latex(question.replace('$', '').replace('=','').strip())
+                answer = parse_latex(answer.replace('$', '').replace('=','').strip())
 
             if numeric_solution:
                 try:
