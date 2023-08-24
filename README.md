@@ -49,6 +49,9 @@ The simulator currently samples problems from 140 topics within 7 distinct categ
 
 Moreover, it facilitates an interpretable routing mechanism to be trained which will route questions to the most capable miners, producing an efficient MoE system. This is a key part of the subnet, as it allows for the subnet to be scaled up to include more miners and topics.
 
+![math_categories](https://github.com/steffencruz/bittensor-math-subnet/assets/6709103/294e50a9-4929-48f4-81fd-d5a23ffb90ea)
+
+
 ## Scoring Mechanism
 
 Rewarding miner reponses is a key part of any subnet, but can be one of the most difficult parts to design in a robust and fair way. In this network, the scoring mechanism is extremely simple as a ground truth answer is provided for each question. The miner's response is then compared to the ground truth answer and a score is calculated based a configurable loss function (such as MSE or cross entropy). This score is then used to determine the reward for the miner.
